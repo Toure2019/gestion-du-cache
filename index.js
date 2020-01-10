@@ -5,6 +5,9 @@ const cache		= require('memory-cache'); // perd le cache au redemarrage
 const flatCache = require('flat-cache');   // persist cache sur serveur
 const Memcached = require('memcached');
 
+const redis		= require('redis');
+const client	= redis.createClient();
+
 const PORT		= process.env.PORT || 3128;
 const app		= express();
 
@@ -28,7 +31,7 @@ let cacheMiddleWare = (duration) => {
 	}
 } 
 
-// load new cache
+// load new cache : persiste le cache dans le fichier "productsCache"
 let fcache = flatCache.load('productsCache');  // ou;
 // let cache = flatCache.load('productsCache', path.resolve('./path/to/folder');
 // Create flat cache routes
@@ -70,11 +73,28 @@ let memcachedMiddleware = (duration) => {
 	}
 }
 
+// create a redisMiddleware
+let redisMiddleware = (req, res, next) => {
+	let key = '__express__' + req.originalUrl || req.url;
+	client.get(key, function(err, reply) {
+		if (reply) {
+			res.send(reply);
+		} else {
+			res.sendResponse = res.send;
+			res.send = (body) => {
+				client.set(key, JSON.stringify(body));
+				res.sendResponse(body);
+			}
+			next();
+		}
+	});
+}
+
 /* Create app routes: 
 	- cacheMiddleWare(30) ou 
 	- flatCacheMiddleware ou
 	- memcachedMiddleware */
-app.get('/products', memcachedMiddleware(20), function(req, res) {
+app.get('/products', redisMiddleware, function(req, res) {
  	setTimeout(() => {
  		let db = new sqlite3.Database('./NodeInventory.db');
  		let sql = `SELECT * FROM products`;
